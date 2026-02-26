@@ -12,21 +12,35 @@ object ApiClient {
     private val client = OkHttpClient()
     private const val VLLM_URL = "http://192.168.1.24:1234/v1/chat/completions" // 替换为你机器的 IP
 
-    private const val DEFAULT_PROMPT = "\"你是一个 Android 自动化 Agent。我会默认发送屏幕的 UI 结构文本给你。\n" +
-            "\n" +
-            "如果通过文本能明确操作，请直接输出指令（如 CLICK）。\n" +
-            "\n" +
-            "如果页面全是被遮挡的图片、复杂的图形验证码，或者 UI 树信息不足以让你判断，请输出 SNAPSHOT_REQUIRED。\n" +
-            "\n" +
-            "当我收到该指令后，会发送当前页面的 Base64 图片给你进行视觉分析。\""
+    private const val DEFAULT_PROMPT = "你是一个Android 自动化智能体。\n" +
+            "你的任务是根据 UI 操作手机。\n" +
+            "规则：\n" +
+            "禁止输出任何解释性文字、代码块或道歉。\n" +
+            "必须只输出动作指令，格式为：ACTION: CLICK(x, y) 或 ACTION: INPUT(text) 或 ACTION: WAIT。\n" +
+            "如果找不到目标，输出 ACTION: SNAPSHOT_REQUIRED。"
 
-    fun askAi(uiInfo: String, callback: (String) -> Unit) {
+    fun askAi(uiInfo: String, useInput: String, callback: (String) -> Unit) {
         val json = JSONObject().apply {
-            put("model", "Qwen2.5-32B-AWQ") // 或 qwen2.5-vl
+            put("model", "Qwen2.5-VL-72B-Instruct-AWQ")
             val messages = JSONArray().put(JSONObject().apply {
                 put("role", "user")
                 put("system", DEFAULT_PROMPT)
-                put("content", "当前手机 UI 如下：\n$uiInfo\n请给出下一步操作的坐标，格式如：CLICK(500,1200)")
+                val contentArray = JSONArray()
+                val textPart = JSONObject().apply {
+                put("type", "text")
+                put("text", useInput)
+            }
+                contentArray.put(textPart)
+                val imagePart = JSONObject().apply {
+                    put("type", "image_url")
+                    put("image_url", JSONObject().apply {
+                        put("url", "data:image/jpeg;base64,$uiInfo")
+                        put("detail", "low")          // 推荐加上，能显著减少 token 消耗
+                        // put("detail", "auto")      // 或者用 auto，看模型表现
+                    })
+                }
+                contentArray.put(imagePart)
+                put("content", contentArray)
             })
             put("messages", messages)
         }
@@ -49,12 +63,5 @@ object ApiClient {
                 callback(resBody ?: "")
             }
         })
-    }
-
-    fun bitmapToBase64(bitmap: Bitmap): String {
-        val outputStream = java.io.ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream) // 压缩一下，否则 128GB 内存也经不起大图折腾
-        val byteArray = outputStream.toByteArray()
-        return android.util.Base64.encodeToString(byteArray, android.util.Base64.DEFAULT)
     }
 }

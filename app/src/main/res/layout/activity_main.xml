@@ -52,6 +52,19 @@
                 android:text="Waiting for command..."
                 android:fontFamily="monospace"
                 android:textSize="12sp" />
+
+            <EditText
+                android:id="@+id/useInput"
+                android:layout_width="match_parent"
+                android:layout_height="100dp"
+                android:layout_marginTop="10dp"
+                android:background="#F0F0F0"
+                android:padding="8dp"
+                android:hint="Waiting for command..."
+                android:fontFamily="monospace"
+                android:textSize="12sp"
+                android:gravity="top"
+                android:inputType="textMultiLine" />
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
