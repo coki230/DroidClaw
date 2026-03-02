@@ -10,6 +10,16 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.accessibilityservice.GestureDescription.StrokeDescription
+import android.content.Context
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -117,7 +127,9 @@ class MyAccessibilityService : AccessibilityService() {
 
     // 模拟点击（用手势注入，像人手指点）
     fun simulateClick(x: Float, y: Float, durationMs: Long = 50L) {  // 短按 50ms
-        val path = Path().apply { moveTo(x, y) }
+        showVisualFeedback(x, y) // 先画个红点提醒我
+        val (realX, realY) = CoordinateMapper.mapToOriginal(x, y)
+        val path = Path().apply { moveTo(realX, realY) }
         val stroke = StrokeDescription(path, 0L, durationMs, false)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
@@ -125,14 +137,18 @@ class MyAccessibilityService : AccessibilityService() {
 
     // 模拟长按
     fun simulateLongPress(x: Float, y: Float, durationMs: Long = 800L) {  // >500ms 为长按
-        simulateClick(x, y, durationMs)
+        val (realX, realY) = CoordinateMapper.mapToOriginal(x, y)
+        simulateClick(realX, realY, durationMs)
     }
 
     // 模拟滑动（从 (x1,y1) 到 (x2,y2)）
     fun simulateSwipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 600L) {
+        val (realX1, realY1) = CoordinateMapper.mapToOriginal(x1, y1)
+        val (realX2, realY2) = CoordinateMapper.mapToOriginal(x2, y2)
+
         val path = Path().apply {
-            moveTo(x1, y1)
-            lineTo(x2, y2)  // 直线滑动，可改成 quadTo / cubicTo 做曲线
+            moveTo(realX1, realY1)
+            lineTo(realX2, realY2)  // 直线滑动，可改成 quadTo / cubicTo 做曲线
         }
         val stroke = StrokeDescription(path, 0L, durationMs, false)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
@@ -141,9 +157,11 @@ class MyAccessibilityService : AccessibilityService() {
 
     // 模拟拖拽（长按后移动）
     fun simulateDrag(x1: Float, y1: Float, x2: Float, y2: Float) {
+        val (realX1, realY1) = CoordinateMapper.mapToOriginal(x1, y1)
+        val (realX2, realY2) = CoordinateMapper.mapToOriginal(x2, y2)
         val path = Path().apply {
-            moveTo(x1, y1)
-            lineTo(x2, y2)
+            moveTo(realX1, realY1)
+            lineTo(realX2, realY2)
         }
         val stroke = StrokeDescription(path, 0L, 1200L, false)  // 总时长 1.2s
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
@@ -176,6 +194,55 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun inputTextAtCurrentFocus(content: String) {
+        // 1. 获取当前屏幕上获得焦点的节点（通常是闪烁光标所在的输入框）
+        val rootNode = rootInActiveWindow ?: return
+        val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+        if (focusedNode != null) {
+            // 2. 执行输入动作
+            val arguments = android.os.Bundle()
+            arguments.putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                content
+            )
+            val success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+
+            if (success) {
+                Log.i("AxonDroid", "成功在当前焦点输入: $content")
+            } else {
+                Log.e("AxonDroid", "输入动作执行失败（可能该节点不支持 SET_TEXT）")
+            }
+
+            // 记得回收节点防止内存泄漏
+            focusedNode.recycle()
+        } else {
+            Log.e("AxonDroid", "当前屏幕没有找到任何聚焦的输入框")
+        }
+    }
+
+    fun performEditorActionSearch() {
+        val rootNode = rootInActiveWindow ?: return
+        val focusedNode = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+        if (focusedNode != null) {
+            // 执行动作：类似于点击键盘右下角的“搜索”或“回车”
+            val success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE.hashCode())
+            // 注意：标准做法是使用 performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+            // 但兼容性最好的是下面这个：
+            if(!success) {
+                val bundle = Bundle()
+                bundle.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, EditorInfo.IME_ACTION_SEARCH)
+                focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, bundle) // 某些系统支持
+            }
+
+            // 通用兜底：发送回车键事件
+//            focusedNode.recycle()
+        }
+    }
+
+
+
     // 示例：点击某个按钮（先找控件，取中心点坐标）
     fun clickButtonByText(buttonText: String) {
         val node = findNodeByText(buttonText)
@@ -195,5 +262,37 @@ class MyAccessibilityService : AccessibilityService() {
 
     fun performHome() {
         performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    fun showVisualFeedback(x: Float, y: Float) {
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val view = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.RED)
+                setStroke(2, Color.WHITE)
+            }
+            alpha = 0.8f
+        }
+
+        val params = WindowManager.LayoutParams(
+            60, 60, // 圆圈大小
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            else WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            this.x = (x.toInt() - 30)
+            this.y = (y.toInt() - 30)
+        }
+
+        windowManager.addView(view, params)
+
+        // 500ms 后自动移除红点
+        view.postDelayed({
+            try { windowManager.removeView(view) } catch (e: Exception) {}
+        }, 500)
     }
 }

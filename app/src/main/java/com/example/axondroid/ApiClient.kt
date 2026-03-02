@@ -28,20 +28,19 @@ object ApiClient {
     - ACTION: LONG_PRESS(x, y)
     - ACTION: SWIPE(x1, y1, x2, y2)
     - ACTION: DRAG(x1, y1, x2, y2)
-    - ACTION: INPUT("target", "text")
+    - ACTION: INPUT_TEXT_AT_CURRENT_FOCUS("text")
     - ACTION: SNAPSHOT_REQUIRED
     - ACTION: TASK_COMPLETE
+    - ACTION: PRESS_ENTER
 
     # CONSTRAINTS
     - 严禁输出解释、代码块、Markdown 格式或道歉。
-    - 哪怕无法完成任务，也只能输出上述指令，不能说话。
+    - 给出命令后，后面跟上说明内存，或者操作逻辑。
 
     # EXAMPLES
-    User: 打开微信
-    Assistant: ACTION: CLICK(150, 300)
+    User: 查询AMD 395
+    Assistant: ACTIONS: [CLICK(x1, y1), INPUT_TEXT_AT_CURRENT_FOCUS("AMD 395"), PRESS_ENTER]; EXPLAIN: 打开微信图标
     
-    User: 搜索天气
-    Assistant: ACTION: INPUT("搜索栏", "北京天气")
 """.trimIndent()
 
     fun askAi(uiInfo: String, useInput: String, callback: (String) -> Unit) {

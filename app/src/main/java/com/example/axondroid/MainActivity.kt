@@ -89,6 +89,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        if (step == 1) {
+            service.performHome()
+            delay(200)
+        }
+
+
         // 1. 安全阀：防止无限循环
         if (step > 15) {
             Log.w("Agent", "任务超过15步，自动终止")
@@ -116,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         Log.d("Agent", "AI 回复: $aiResponse")
 
         // 4. 执行：解析指令并在手机上模拟操作
-        val isActionExecuted = ActionParser.parseAndExecute(aiResponse, service)
+        val isActionExecuted = ActionParser.parseActionsAndExecute(aiResponse, service)
 
         // 5. 循环决策
         when {
@@ -149,6 +155,23 @@ class MainActivity : AppCompatActivity() {
         maxShortSide: Int = 768,
         jpegQuality: Int = 75
     ): String {
+        val originalWidth = bitmap.width
+        val originalHeight = bitmap.height
+
+        // 计算缩放后的尺寸
+        val (newWidth, newHeight) = if (originalWidth > originalHeight) {
+            val h = maxShortSide
+            val w = (originalWidth * h.toFloat() / originalHeight).toInt()
+            w to h
+        } else {
+            val w = maxShortSide
+            val h = (originalHeight * w.toFloat() / originalWidth).toInt()
+            w to h
+        }
+
+        // 记录比例
+        CoordinateMapper.calculateScale(originalWidth, originalHeight, newWidth, newHeight)
+
         // 1. 等比例缩小
         val scaledBitmap = if (bitmap.width > bitmap.height) {
             val newHeight = maxShortSide
