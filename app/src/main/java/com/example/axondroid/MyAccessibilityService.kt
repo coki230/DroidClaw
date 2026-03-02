@@ -10,6 +10,8 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.accessibilityservice.GestureDescription.StrokeDescription
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class MyAccessibilityService : AccessibilityService() {
 
@@ -65,26 +67,44 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun captureScreen(onComplete: (Bitmap?) -> Unit) {
+
+    // 在 MyAccessibilityService 类中
+    suspend fun captureScreenSuspend(): Bitmap? = suspendCancellableCoroutine { continuation ->
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            // 使用 Android 11+ 的无障碍截屏 API
-            takeScreenshot(
-                Display.DEFAULT_DISPLAY, java.util.concurrent.Executors.newSingleThreadExecutor(),
-                object : TakeScreenshotCallback {
-                    override fun onSuccess(screenshot: ScreenshotResult) {
-                        val bitmap = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
-                        onComplete(bitmap)
+            try {
+                takeScreenshot(
+                    Display.DEFAULT_DISPLAY,
+                    java.util.concurrent.Executors.newSingleThreadExecutor(),
+                    object : TakeScreenshotCallback {
+                        override fun onSuccess(screenshot: ScreenshotResult) {
+                            // 1. 从硬件缓冲获取 Bitmap
+                            val hwBitmap = Bitmap.wrapHardwareBuffer(
+                                screenshot.hardwareBuffer,
+                                screenshot.colorSpace ?: android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.SRGB)
+                            )
+
+                            // 2. 关键：Hardware Bitmap 不能直接压缩，需要转为软件 Bitmap
+                            val softwareBitmap = hwBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+
+                            // 3. 恢复协程
+                            continuation.resume(softwareBitmap)
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            Log.e("Agent", "截屏失败，错误码: $errorCode")
+                            continuation.resume(null)
+                        }
                     }
-                    override fun onFailure(errorCode: Int) {
-                        onComplete(null)
-                    }
-                })
+                )
+            } catch (e: Exception) {
+                Log.e("Agent", "调用截屏 API 异常: ${e.message}")
+                continuation.resume(null)
+            }
         } else {
-            // 旧版本通常需要 MediaProjection API，比较复杂
-            onComplete(null)
+            Log.e("Agent", "当前 Android 版本过低，不支持 takeScreenshot")
+            continuation.resume(null)
         }
     }
-
 
     // 查找控件（按 text 或 id）
     fun findNodeByText(text: String): AccessibilityNodeInfo? {

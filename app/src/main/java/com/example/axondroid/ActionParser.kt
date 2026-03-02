@@ -16,7 +16,7 @@ object ActionParser {
     // 5 & 6. INPUT(target, text) - 兼容 hintText 或 resourceId
     private val inputRegex = Regex("""ACTION:\s*INPUT\(\s*([^,)]+)\s*,\s*([^)]+)\s*\)""", RegexOption.IGNORE_CASE)
 
-    fun parseAndExecute(response: String, service: MyAccessibilityService) {
+    fun parseAndExecute(response: String, service: MyAccessibilityService): Boolean {
         val cleanResponse = response.trim()
 
         when {
@@ -73,6 +73,13 @@ object ActionParser {
             cleanResponse.contains("SNAPSHOT_REQUIRED", ignoreCase = true) -> {
                 // 回调给 Activity 执行截屏逻辑
             }
+
+            // 处理截图请求
+            cleanResponse.contains("TASK_COMPLETE", ignoreCase = true) -> {
+                // 回调给 Activity 执行截屏逻辑
+                return false
+            }
         }
+        return true
     }
 }

@@ -1,6 +1,7 @@
 package com.example.axondroid
 
 import android.graphics.Bitmap
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -8,6 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
 object ApiClient {
     private val client = OkHttpClient.Builder()
@@ -28,10 +30,10 @@ object ApiClient {
     - ACTION: DRAG(x1, y1, x2, y2)
     - ACTION: INPUT("target", "text")
     - ACTION: SNAPSHOT_REQUIRED
+    - ACTION: TASK_COMPLETE
 
     # CONSTRAINTS
     - 严禁输出解释、代码块、Markdown 格式或道歉。
-    - 如果需要打开应用但没看到图标，输出 ACTION: SNAPSHOT_REQUIRED。
     - 哪怕无法完成任务，也只能输出上述指令，不能说话。
 
     # EXAMPLES
@@ -98,5 +100,18 @@ object ApiClient {
                 callback(resBody ?: "")
             }
         })
+    }
+
+    /**
+     * 支持协程的 AI 请求函数
+     */
+    suspend fun askAiSuspend(imageBase64: String, userInput: String): String = suspendCancellableCoroutine { continuation ->
+        // 调用你之前写好的异步 askAi 方法
+        askAi(imageBase64, userInput) { response ->
+            // 当网络返回结果时，恢复协程并把 response 传回给调用者
+            if (continuation.isActive) {
+                continuation.resume(response)
+            }
+        }
     }
 }
