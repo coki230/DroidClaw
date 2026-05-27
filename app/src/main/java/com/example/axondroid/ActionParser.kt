@@ -2,43 +2,36 @@ package com.example.axondroid
 
 object ActionParser {
     // 1. CLICK(x, y)
-    private val clickRegex = Regex("""ACTIONS:\s*CLICK\(\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
+    private val clickRegex = Regex("""\s*CLICK\(\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
 
     // 2. LONG_PRESS(x, y)
-    private val longPressRegex = Regex("""ACTION:\s*LONG_PRESS\(\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
+    private val longPressRegex = Regex("""\s*LONG_PRESS\(\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
 
     // 3. SWIPE(x1, y1, x2, y2)
-    private val swipeRegex = Regex("""ACTION:\s*SWIPE\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
+    private val swipeRegex = Regex("""\s*SWIPE\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
 
     // 4. DRAG(x1, y1, x2, y2)
-    private val dragRegex = Regex("""ACTION:\s*DRAG\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
+    private val dragRegex = Regex("""\s*DRAG\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)""", RegexOption.IGNORE_CASE)
 
     // 5 INPUT_TEXT_AT_CURRENT_FOCUS(text)
-    private val inputRegex = Regex("""ACTION:\s*INPUT_TEXT_AT_CURRENT_FOCUS\(\s*([^)]+)\s*\)""", RegexOption.IGNORE_CASE)
+    private val inputRegex = Regex("""\s*INPUT_TEXT_AT_CURRENT_FOCUS\(\s*([^)]+)\s*\)""", RegexOption.IGNORE_CASE)
 
-    fun parseActionsAndExecute(response: String, service: MyAccessibilityService) {
+    fun parseActionsAndExecute(response: String, service: MyAccessibilityService): Boolean  {
         // 伪代码：解析 AI 返回的逻辑链
         val actions = parseActionList(response)
         for (action in actions) {
-            execute(action, service)
+            val complete = execute(action, service)
+            if (!complete) return false
             Thread.sleep(200) // 快速连续操作
         }
+        return true
     }
-
     fun parseActionList(aiResponse: String): List<String> {
-        // 1. 使用正则匹配 ACTIONS: [...] 括号内部的内容
-        // 匹配 [ 到 ] 之间的所有字符
-        val regex = Regex("""ACTIONS:\s*\[(.*?)\]""", RegexOption.IGNORE_CASE)
-        val matchResult = regex.find(aiResponse)
+        // 匹配模式：大写字母指令 + 括号 + 括号内非右括号的内容
+        // 例如：CLICK(12, 34) 或 INPUT("hi, logic")
+        val pattern = Regex("""[A-Z_]+\s*\(.*?\)|[A-Z_]+(?=\s*[,\]])""")
 
-        val actionsString = matchResult?.groupValues?.get(1) ?: ""
-
-        if (actionsString.isEmpty()) return emptyList()
-
-        // 2. 根据逗号分割成单个指令，并去除前后的空格
-        // 注意：如果是 INPUT("text, with comma") 这种情况，简单的 split(",") 会出问题
-        // 这里我们假设指令内部参数不含逗号，或者使用更复杂的正则拆分
-        return actionsString.split(Regex(""",(?=[A-Z])""")).map { it.trim() }
+        return pattern.findAll(aiResponse).map { it.value.trim() }.toList()
     }
 
     fun execute(action: String, service: MyAccessibilityService): Boolean {

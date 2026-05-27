@@ -22,6 +22,8 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MyAccessibilityService : AccessibilityService() {
 
@@ -58,23 +60,46 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     // 【感知】抓取当前屏幕所有可点击元素的文本和坐标
-    fun captureUIStructure(): String {
-        val rootNode = rootInActiveWindow ?: return "No Window"
-        val sb = StringBuilder()
-        traverseNode(rootNode, sb)
-        return sb.toString()
-    }
+    fun getRefinedUiMetadata(): String {
+        val rootNode = MyAccessibilityService.instance?.rootInActiveWindow ?: return ""
+        val nodeList = JSONArray()
 
-    private fun traverseNode(node: AccessibilityNodeInfo, sb: StringBuilder) {
-        if (node.isClickable) {
-            val rect = Rect()
-            node.getBoundsInScreen(rect)
-            val text = node.text ?: node.contentDescription ?: "Unnamed"
-            sb.append("元素: $text, 坐标: [${rect.centerX()}, ${rect.centerY()}]\n")
+        fun traverse(node: AccessibilityNodeInfo) {
+            if (!node.isVisibleToUser) return
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            if (bounds.isEmpty || bounds.left < 0 || bounds.top < 0) return
+
+            val isClickable = node.isClickable
+            val isEditable = node.isEditable
+            val text = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
+            val className = node.className?.toString()?.split(".")?.lastOrNull() ?: "View"
+
+            if (isClickable || isEditable || text.isNotEmpty()) {
+                // 构造单个节点的 JSON 描述
+                nodeList.put(JSONObject().apply {
+                    put("type", className)
+                    if (text.isNotEmpty()) put("text", text)
+                    put("pos", "${bounds.centerX()},${bounds.centerY()}")
+                    if (isClickable) put("clickable", true)
+                    if (isEditable) put("editable", true)
+                })
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { traverse(it) }
+            }
         }
-        for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { traverseNode(it, sb) }
+
+        traverse(rootNode)
+
+        // --- 仿照你提供的格式：封装成最终的消息节点 ---
+        val result = JSONObject().apply {
+            put("type", "text")
+            put("text", "Current UI Elements: ${nodeList.toString()}")
         }
+
+        return result.toString()
     }
 
 

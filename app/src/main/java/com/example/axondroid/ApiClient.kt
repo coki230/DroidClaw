@@ -23,7 +23,7 @@ object ApiClient {
     你是一个 Android 自动化智能体。手机已经处于无障碍服务模式，你只能通过指令与手机交互。你具有操作手机的完全权限
 
     # INTERFACE FORMAT (STRICT)
-    你必须**只**输出以下格式之一，严禁任何自然语言描述：
+    你必须用**严格按照以下格式的**命令组合为一个指令集ACTIONS：
     - ACTION: CLICK(x, y)
     - ACTION: LONG_PRESS(x, y)
     - ACTION: SWIPE(x1, y1, x2, y2)
@@ -31,21 +31,26 @@ object ApiClient {
     - ACTION: INPUT_TEXT_AT_CURRENT_FOCUS("text")
     - ACTION: SNAPSHOT_REQUIRED
     - ACTION: TASK_COMPLETE
-    - ACTION: PRESS_ENTER
+    组成的指令集格式为：ACTIONS: [CLICK(x1, y1), INPUT_TEXT_AT_CURRENT_FOCUS("AMD 395"), PRESS_ENTER]，
+    如果不理解当前页面详情，可以获取页面截图ACTIONS: [SNAPSHOT_REQUIRED]
 
     # CONSTRAINTS
     - 严禁输出解释、代码块、Markdown 格式或道歉。
     - 给出命令后，后面跟上说明内存，或者操作逻辑。
+    - 禁止在 ACTIONS 列表中使用嵌套括号，所有坐标参数必须平铺。
+    - 调用INPUT_TEXT_AT_CURRENT_FOCUS之前需要先调用CLICK定位光标位置
 
     # EXAMPLES
     User: 查询AMD 395
     Assistant: ACTIONS: [CLICK(x1, y1), INPUT_TEXT_AT_CURRENT_FOCUS("AMD 395"), PRESS_ENTER]; EXPLAIN: 打开微信图标
     
+    Assistant: ACTION: SWIPE(x1, y1, x2, y2) # 必须为 4 个数字，严禁写成 (x,y),(x,y) 这种形式
 """.trimIndent()
 
-    fun askAi(uiInfo: String, useInput: String, callback: (String) -> Unit) {
+    fun askAi(imageInfo: String, useInput: String, uiMetaData: String, callback: (String) -> Unit) {
         val json = JSONObject().apply {
-            put("model", "Qwen2.5-VL-72B-Instruct-AWQ")
+//            put("model", "Qwen2.5-VL-72B-Instruct-AWQ")
+            put("model", "Qwen3-14B-Claude-4.5-Opus-Distill.q4_k_m.gguf")
 
             val messages = JSONArray().apply {
                 // 第一条：system 消息（纯文本 content）
@@ -64,14 +69,24 @@ object ApiClient {
                             put("text", useInput)
                         })
 
-                        // 图片部分
-                        put(JSONObject().apply {
-                            put("type", "image_url")
-                            put("image_url", JSONObject().apply {
-                                put("url", "data:image/jpeg;base64,$uiInfo")
-                                put("detail", "low")
+                        if(imageInfo.isNotBlank()) {
+                            // 图片部分
+                            put(JSONObject().apply {
+                                put("type", "image_url")
+                                put("image_url", JSONObject().apply {
+                                    put("url", "data:image/jpeg;base64,$imageInfo")
+                                    put("detail", "low")
+                                })
                             })
-                        })
+                        }
+
+                        if(uiMetaData.isNotBlank()) {
+                            put(JSONObject().apply {
+                                put("type", "text")
+                                put("text", "Current UI Elements:$uiMetaData")
+                            })
+                        }
+
                     })
                 })
             }
@@ -104,9 +119,9 @@ object ApiClient {
     /**
      * 支持协程的 AI 请求函数
      */
-    suspend fun askAiSuspend(imageBase64: String, userInput: String): String = suspendCancellableCoroutine { continuation ->
+    suspend fun askAiSuspend(imageBase64: String, userInput: String, uiMetaData: String): String = suspendCancellableCoroutine { continuation ->
         // 调用你之前写好的异步 askAi 方法
-        askAi(imageBase64, userInput) { response ->
+        askAi(imageBase64, userInput, uiMetaData) { response ->
             // 当网络返回结果时，恢复协程并把 response 传回给调用者
             if (continuation.isActive) {
                 continuation.resume(response)

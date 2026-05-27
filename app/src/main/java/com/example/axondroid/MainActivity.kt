@@ -75,14 +75,14 @@ class MainActivity : AppCompatActivity() {
         // 启动生命周期感知的协程，当 Activity 销毁时会自动停止
         lifecycleScope.launch {
             Log.d("Agent", "开始执行任务: $userTask")
-            runTaskStep(userTask, 1)
+            runTaskStep(userTask, 1, false)
         }
     }
 
     /**
      * 递归执行任务步骤
      */
-    private suspend fun runTaskStep(goal: String, step: Int) {
+    private suspend fun runTaskStep(goal: String, step: Int, isNeedCaptureScreen: Boolean) {
         // 获取服务实例
         val service = MyAccessibilityService.instance ?: run {
             Log.e("Agent", "无障碍服务未启动")
@@ -104,21 +104,26 @@ class MainActivity : AppCompatActivity() {
 
         Log.d("Agent", "正在执行第 $step 步...")
 
-        // 2. 感知：获取当前最新的屏幕截图
-        val bitmap = service.captureScreenSuspend()
-        if (bitmap == null) {
-            Log.e("Agent", "第 $step 步截屏失败，2秒后重试")
-            delay(2000)
-            runTaskStep(goal, step) // 失败重试，步数不增加
-            return
-        }
+        // 2. 感知：抓取当前屏幕所有可点击元素的文本和坐标 获取当前最新的屏幕截图
+        var base64 = "";
+        val uiMetaData = service.getRefinedUiMetadata();
+        if (isNeedCaptureScreen) {
 
-        // 转换 Base64 (确保 bitmapToBase64 能处理非 Hardware Bitmap)
-        val base64 = bitmapToBase64(bitmap)
+            val bitmap = service.captureScreenSuspend()
+            if (bitmap == null) {
+                Log.e("Agent", "第 $step 步截屏失败，2秒后重试")
+                delay(2000)
+                runTaskStep(goal, step, true) // 失败重试，步数不增加
+                return
+            }
+
+            // 转换 Base64 (确保 bitmapToBase64 能处理非 Hardware Bitmap)
+            base64 = bitmapToBase64(bitmap)
+        }
 
         // 3. 思考：发送给 AI 并等待结果
         // 假设 ApiClient.askAiSuspend 已经按之前的建议改写为挂起函数
-        val aiResponse = ApiClient.askAiSuspend(base64, goal)
+        val aiResponse = ApiClient.askAiSuspend(base64, uiMetaData,goal)
         Log.d("Agent", "AI 回复: $aiResponse")
 
         // 4. 执行：解析指令并在手机上模拟操作
@@ -131,18 +136,18 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "✅ 任务完成！", Toast.LENGTH_LONG).show()
             }
 
-            isActionExecuted -> {
-                // 动作成功执行，延迟 3 秒让页面跳转或动画完成
-                Log.d("Agent", "动作执行成功，等待页面刷新...")
-                delay(3000)
-                runTaskStep(goal, step + 1)
-            }
-
-            else -> {
+            aiResponse.contains("TASK_COMPLETE") -> {
                 // 如果 AI 返回了 SNAPSHOT_REQUIRED 或者没识别出有效指令
                 Log.w("Agent", "未能执行有效动作，尝试重新观察...")
                 delay(2000)
-                runTaskStep(goal, step) // 重新观察，不增加步数
+                runTaskStep(goal, step, true) // 重新观察，不增加步数
+            }
+
+            isActionExecuted -> {
+                // 动作成功执行，延迟 3 秒让页面跳转或动画完成
+                Log.d("Agent", "动作执行成功，等待页面刷新...")
+                delay(2000)
+                runTaskStep(goal, step + 1, false)
             }
         }
     }
